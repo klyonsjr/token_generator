@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+*.json
+server.crt
+server.key
+secrets/
+*.egg-info
