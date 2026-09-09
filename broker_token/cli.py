@@ -129,6 +129,9 @@ def resolve_yaml_path(json_path: str, yaml_arg: str | None) -> str:
 def write_yaml_token_file(path: str, token_data: dict) -> None:
     """Serialize *token_data* to *path* as YAML with owner-only permissions.
 
+    All fields are nested under a single top-level ``token`` wrapper key so
+    the file parses back to ``{"token": token_data}`` (R1.2).
+
     Writes atomically via a temporary file in the destination directory,
     applies ``0o600`` permissions before the file becomes visible, then
     renames it into place. On any failure, removes the temporary file so no
@@ -138,9 +141,10 @@ def write_yaml_token_file(path: str, token_data: dict) -> None:
     messaging and exit codes live in ``main()``.
     """
     # Serialize first so a serialization error occurs before the destination
-    # directory is touched (R1.2).
+    # directory is touched (R1.2). Wrap the fields under a single top-level
+    # ``token`` key so the file parses back to ``{"token": token_data}``.
     serialized = yaml.safe_dump(
-        token_data, default_flow_style=False, sort_keys=False
+        {"token": token_data}, default_flow_style=False, sort_keys=False
     )
 
     # Create the temp file in the destination directory so the final

@@ -425,7 +425,7 @@ class TestWriteYamlTokenFile:
             max_size=len(field_names),
         )
 
-        # Feature: store-token-in-yaml-file, Property 1: For any Token_Data mapping of string keys to string values, writing it with write_yaml_token_file then parsing with yaml.safe_load produces a mapping equal to the original Token_Data
+        # Feature: store-token-in-yaml-file, Property 1: For any Token_Data mapping of string keys to string values, writing it with write_yaml_token_file then parsing with yaml.safe_load produces a mapping equal to {"token": Token_Data} — a single top-level 'token' key whose value equals the original Token_Data
         @given(token_data=token_data_strategy)
         @settings(max_examples=200)
         def check(token_data):
@@ -435,7 +435,7 @@ class TestWriteYamlTokenFile:
             with open(out) as f:
                 loaded = yaml.safe_load(f)
 
-            assert loaded == token_data
+            assert loaded == {"token": token_data}
 
         check()
 
@@ -474,7 +474,7 @@ class TestWriteYamlTokenFileOverwrite:
             max_size=len(field_names),
         )
 
-        # Feature: store-token-in-yaml-file, Property 3: For any two Token_Data values A and B, writing A then B to the same YAML path leaves the file parsing to B with no residual keys or values from A
+        # Feature: store-token-in-yaml-file, Property 3: For any two Token_Data values A and B, writing A then B to the same YAML path leaves the file parsing to {"token": B} with no residual keys or values from A under the 'token' key
         @given(a=token_data, b=token_data)
         @settings(max_examples=200)
         def check(a, b):
@@ -485,13 +485,10 @@ class TestWriteYamlTokenFileOverwrite:
             with open(out) as f:
                 loaded = yaml.safe_load(f)
 
-            # An empty mapping serializes to YAML that parses back as None;
-            # normalize so the comparison reflects "no keys".
-            if loaded is None:
-                loaded = {}
-
-            # The file parses to B, with no residual keys or values from A.
-            assert loaded == b
+            # The file parses to {"token": B} exactly: a single top-level
+            # 'token' wrapper key whose value is B, with no residual keys or
+            # values from A under 'token'.
+            assert loaded == {"token": b}
 
         check()
 
@@ -766,7 +763,7 @@ class TestYamlJsonEquality:
             max_size=len(field_names),
         )
 
-        # Feature: store-token-in-yaml-file, Property 2: For any Token_Data, writing it to both a YAML file and a JSON file in the same run and parsing each yields two mappings equal to each other and to the original Token_Data
+        # Feature: store-token-in-yaml-file, Property 2: For any Token_Data, writing it to both a YAML file and a JSON file in the same run and parsing each yields the mapping under the YAML 'token' key equal to the JSON top-level mapping and equal to the original Token_Data
         @given(token_data=token_data_strategy)
         @settings(max_examples=200)
         def check(token_data):
@@ -782,14 +779,18 @@ class TestYamlJsonEquality:
             with open(json_out) as jf:
                 json_loaded = json.load(jf)
 
-            # An empty mapping serializes to YAML that parses back as None;
-            # normalize so the comparison reflects "no keys".
-            if yaml_loaded is None:
-                yaml_loaded = {}
+            # The YAML file nests the fields under a single top-level 'token'
+            # wrapper key; the JSON file is a flat top-level mapping. An empty
+            # mapping serializes to YAML that parses the wrapper value back as
+            # None, so normalize it to "no keys".
+            yaml_token = yaml_loaded["token"]
+            if yaml_token is None:
+                yaml_token = {}
 
-            # Both parse to equal content, equal to each other and to the
-            # original Token_Data (identical key sets and values).
-            assert yaml_loaded == json_loaded == token_data
+            # The mapping under the YAML 'token' key equals the JSON top-level
+            # mapping and equals the original Token_Data (identical key sets
+            # and values).
+            assert yaml_token == json_loaded == token_data
 
         check()
 

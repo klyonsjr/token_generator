@@ -60,7 +60,7 @@ Add a YAML output to the `broker-token` CLI alongside the existing JSON output. 
 
 - [x] 4. Implement the YAML writer
   - [x] 4.1 Implement `write_yaml_token_file(path, token_data)` in `broker_token/cli.py`
-    - Serialize with `yaml.safe_dump(token_data, default_flow_style=False, sort_keys=False)`
+    - Wrap the fields under a single top-level `token` key and serialize with `yaml.safe_dump({"token": token_data}, default_flow_style=False, sort_keys=False)` so the YAML file parses back to `{"token": Token_Data}` (R1.2)
     - Create a temp file via `tempfile.mkstemp(dir=os.path.dirname(path) or ".")` in the destination directory
     - `os.chmod` the temp file to `0o600` before it becomes visible (R4.1); if `chmod` raises, delete the temp file and re-raise a permission error (R4.2)
     - `os.replace(temp_path, path)` to atomically overwrite any existing file (R1.6)
@@ -71,15 +71,15 @@ Add a YAML output to the `broker-token` CLI alongside the existing JSON output. 
   - [x] 4.2 Write property test for YAML round-trip
     - **Property 1: YAML round-trip preserves Token_Data**
     - **Validates: Requirements 1.1, 1.2**
-    - Tag: `# Feature: store-token-in-yaml-file, Property 1: For any Token_Data mapping of string keys to string values, writing it with write_yaml_token_file then parsing with yaml.safe_load produces a mapping equal to the original Token_Data`
-    - Generate `Token_Data` as a dict over the known field names to `st.text()` values (empty, unicode, YAML-significant chars `: # -` quotes, leading/trailing whitespace); write, `yaml.safe_load`, assert equal; >=100 iterations
+    - Tag: `# Feature: store-token-in-yaml-file, Property 1: For any Token_Data mapping of string keys to string values, writing it with write_yaml_token_file then parsing with yaml.safe_load produces a mapping equal to {"token": Token_Data} — a single top-level 'token' key whose value equals the original Token_Data`
+    - Generate `Token_Data` as a dict over the known field names to `st.text()` values (empty, unicode, YAML-significant chars `: # -` quotes, leading/trailing whitespace); write, `yaml.safe_load`, assert `yaml.safe_load(...) == {"token": token_data}`; >=100 iterations
     - _Requirements: 1.1, 1.2_
 
   - [x] 4.3 Write property test for overwrite
     - **Property 3: YAML write overwrites any existing file**
     - **Validates: Requirements 1.6**
-    - Tag: `# Feature: store-token-in-yaml-file, Property 3: For any two Token_Data values A and B, writing A then B to the same YAML path leaves the file parsing to B with no residual keys or values from A`
-    - Generate two `Token_Data` values; write A then B to same path; assert parsed == B; >=100 iterations
+    - Tag: `# Feature: store-token-in-yaml-file, Property 3: For any two Token_Data values A and B, writing A then B to the same YAML path leaves the file parsing to {"token": B} with no residual keys or values from A under the 'token' key`
+    - Generate two `Token_Data` values; write A then B to same path; assert the file parses to `{"token": B}` with no residual A keys under `token`; >=100 iterations
     - _Requirements: 1.6_
 
   - [x] 4.4 Write property test for owner-only permissions
@@ -119,8 +119,8 @@ Add a YAML output to the `broker-token` CLI alongside the existing JSON output. 
   - [x] 7.2 Write property test for YAML/JSON equality
     - **Property 2: YAML and JSON parse to equal content**
     - **Validates: Requirements 1.3, 1.4**
-    - Tag: `# Feature: store-token-in-yaml-file, Property 2: For any Token_Data, writing it to both a YAML file and a JSON file in the same run and parsing each yields two mappings equal to each other and to the original Token_Data`
-    - Generate `Token_Data`; write both; assert `yaml.safe_load(y) == json.load(j) == token_data`; >=100 iterations
+    - Tag: `# Feature: store-token-in-yaml-file, Property 2: For any Token_Data, writing it to both a YAML file and a JSON file in the same run and parsing each yields the mapping under the YAML 'token' key equal to the JSON top-level mapping and equal to the original Token_Data`
+    - Generate `Token_Data`; write both; assert `yaml.safe_load(y)["token"] == json.load(j) == token_data`; >=100 iterations
     - _Requirements: 1.3, 1.4_
 
   - [x] 7.3 Write property test for JSON independence from YAML arguments
@@ -146,6 +146,7 @@ Add a YAML output to the `broker-token` CLI alongside the existing JSON output. 
 
 - [x] 8. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
+  - Re-verify the full suite after the YAML wrapper-key change (tasks 4.1, 4.2, 4.3, 7.2).
 
 ## Notes
 

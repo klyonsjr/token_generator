@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature adds a YAML output to the `broker-token` CLI. After the OAuth2 flow completes, the CLI already writes `Token_Data` to a JSON file (`token.json` by default). This design adds a second serialization of the *same* `Token_Data` to a YAML file, produced **in addition to** the JSON file during a single run. Both files carry identical field values, and the existing JSON output and its downstream consumer (`token_refresher`) remain byte-for-byte unchanged.
+This feature adds a YAML output to the `broker-token` CLI. After the OAuth2 flow completes, the CLI already writes `Token_Data` to a JSON file (`token.json` by default). This design adds a second serialization of the *same* `Token_Data` to a YAML file, produced **in addition to** the JSON file during a single run. In the YAML file, all token fields are nested under a single top-level wrapper key named `token`; the JSON file stays a flat top-level mapping with no wrapper key. Both files carry identical field values, and the existing JSON output and its downstream consumer (`token_refresher`) remain byte-for-byte unchanged.
 
 The design centers on four concerns:
 
@@ -80,7 +80,7 @@ def write_yaml_token_file(path: str, token_data: dict) -> None:
 ```
 
 Behavior:
-- Serialize `token_data` with `yaml.safe_dump(token_data, default_flow_style=False, sort_keys=False)`. Serialization happens in memory (or into the temp file) so a serialization error occurs before the destination is touched (R1.2, R1.5).
+- Wrap `token_data` under a single top-level `token` key and serialize with `yaml.safe_dump({"token": token_data}, default_flow_style=False, sort_keys=False)`, so the YAML file parses back to `{"token": Token_Data}` (R1.1, R1.2). Serialization happens in memory (or into the temp file) so a serialization error occurs before the destination is touched (R1.2, R1.5).
 - Create the temp file via `tempfile.mkstemp(dir=os.path.dirname(path) or ".")`. Using the same directory guarantees the final `os.replace` is atomic on POSIX.
 - `os.chmod(temp_fd/temp_path, 0o600)` so the owner gets read/write and no group/other access (R4.1). If `chmod` raises, delete the temp file and re-raise a permission error (R4.2).
 - `os.replace(temp_path, path)` renames atomically, overwriting any existing YAML file (R1.6).
@@ -166,6 +166,15 @@ New/changed steps, in order:
 
 The OAuth response may include additional keys (e.g. `expires_in`, `token_type`); the design writes whatever `Token_Data` contains to *both* files identically, so the YAML and JSON field sets are equal in a given run (R1.3). Timestamp fields are already normalized to ISO strings in `main()` before either write, ensuring both serializers see the same plain-string values (R1.4).
 
+### On-disk structure
+
+The two files differ only in whether the fields are wrapped:
+
+- **YAML on-disk structure** is `{"token": Token_Data}` — a mapping with a single top-level `token` wrapper key whose value is the `Token_Data` mapping.
+- **JSON on-disk structure** is the flat `Token_Data` mapping itself — the field names sit at the top level with no wrapper key (R2.4).
+
+So for a given run, the mapping found under the YAML `token` key equals the JSON top-level mapping, and both equal `Token_Data`.
+
 ### Sensitive_Field set
 
 `{access_token, refresh_token, client_id, client_secret}` — values written only into the files, never to stdout/stderr (R4.3). `REDACTION_MARKER = "***REDACTED***"` is defined for any output that would otherwise carry a sensitive value (R4.4).
@@ -184,19 +193,19 @@ The properties below were derived from the acceptance criteria after a redundanc
 
 ### Property 1: YAML round-trip preserves Token_Data
 
-*For any* `Token_Data` mapping of string keys to string values, writing it with `write_yaml_token_file` and then parsing the file with `yaml.safe_load` SHALL produce a mapping equal to the original `Token_Data`.
+*For any* `Token_Data` mapping of string keys to string values, writing it with `write_yaml_token_file` and then parsing the file with `yaml.safe_load` SHALL produce a mapping equal to `{"token": Token_Data}` — that is, a single top-level `token` key whose value is a mapping equal to the original `Token_Data`.
 
 **Validates: Requirements 1.1, 1.2**
 
 ### Property 2: YAML and JSON parse to equal content
 
-*For any* `Token_Data`, writing it to both a YAML file and a JSON file in the same run and then parsing each file SHALL yield two mappings that are equal to each other and to the original `Token_Data` (identical key sets and identical values).
+*For any* `Token_Data`, writing it to both a YAML file and a JSON file in the same run and then parsing each file SHALL yield: the mapping under the YAML `token` key equal to the JSON top-level mapping and equal to the original `Token_Data` (identical key sets and identical values).
 
 **Validates: Requirements 1.3, 1.4**
 
 ### Property 3: YAML write overwrites any existing file
 
-*For any* two `Token_Data` values A and B, writing A and then B to the same YAML path SHALL leave the file parsing to B, with no residual keys or values from A.
+*For any* two `Token_Data` values A and B, writing A and then B to the same YAML path SHALL leave the file parsing to `{"token": B}`, with no residual keys or values from A under the `token` key.
 
 **Validates: Requirements 1.6**
 
@@ -262,9 +271,9 @@ PyYAML-based serialization is a pure input/output transformation over structured
 Generators: `Token_Data` is generated as a dict from a fixed/random subset of the known field names to `st.text()` values (including empty strings, unicode, and YAML-significant characters such as `:`, `#`, `-`, quotes, and leading/trailing whitespace) to exercise serializer edge cases. Path generators produce basenames with and without dots and with nested directories.
 
 Mapping of properties to tests:
-- Property 1 (YAML round-trip) — generate `Token_Data`, write, `yaml.safe_load`, assert equal.
-- Property 2 (YAML/JSON equality) — write both, assert `yaml.safe_load(y) == json.load(j) == token_data`.
-- Property 3 (overwrite) — write A then B, assert parsed == B.
+- Property 1 (YAML round-trip) — generate `Token_Data`, write, `yaml.safe_load`, assert equal to `{"token": token_data}`.
+- Property 2 (YAML/JSON equality) — write both, assert `yaml.safe_load(y)["token"] == json.load(j) == token_data`.
+- Property 3 (overwrite) — write A then B, assert `yaml.safe_load(y) == {"token": B}` with no residual A keys under `token`.
 - Property 4 (JSON independence) — produce JSON with and without a YAML arg, assert files byte-identical.
 - Property 5 (path derivation) — generate JSON paths, assert derived YAML path per the dotted/dotless rule with directory preserved.
 - Property 6 (override precedence) — generate non-blank override, assert `resolve_yaml_path` returns it.
